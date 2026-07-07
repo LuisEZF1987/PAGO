@@ -21,11 +21,16 @@
     button { width:100%; margin-top:1.3rem; padding:.7rem; background:var(--accent2); color:#fff; border:0; border-radius:8px; font-size:1rem; cursor:pointer; }
     .err { color:var(--danger); font-size:.82rem; margin-top:.8rem; min-height:1em; }
     .th { position:absolute; top:1rem; right:1.2rem; color:var(--muted); font-size:.8rem; cursor:pointer; background:none; border:0; }
+    .dimed-login-logo{height:60px;margin:0 auto 14px;object-fit:contain;display:block}
+    [data-theme="dark"] .logo-claro{display:none}
+    [data-theme="light"] .logo-oscuro{display:none}
   </style>
 </head>
 <body>
   <button class="th" onclick="toggleTheme()" id="thBtn">◐ tema</button>
   <form class="card" onsubmit="return doLogin(event)">
+    <img src="/static/logo-white.png" class="dimed-login-logo logo-oscuro" alt="Dimed">
+    <img src="/static/logo-blue.png"  class="dimed-login-logo logo-claro"  alt="Dimed">
     <h1>Dimed<span class="ac">·Pago</span></h1>
     <p class="sub">Cobros con tarjeta, transferencia y efectivo</p>
     <div id="paso1">

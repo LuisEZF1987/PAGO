@@ -36,9 +36,27 @@
     </div>
     <div id="mfaOn" class="hidden">
       <div class="msg s">2FA está ACTIVADO en su cuenta.</div>
-      <label>Contraseña</label><input id="mfaDisPass" type="password" autocomplete="current-password">
-      <label>Código vigente (o de recuperación)</label><input id="mfaDisCode" inputmode="numeric">
-      <div style="margin-top:.7rem"><button class="lnk" onclick="disable2fa()">Desactivar 2FA</button></div>
+      <div id="mfaEnrolDev" style="border:1px solid var(--border);border-radius:.6rem;padding:.8rem;margin-top:.8rem">
+        <p class="muted" style="margin:0 0 .5rem">¿Aún no registraste tu app autenticadora, o cambiaste de teléfono?
+        Muestra el QR, escanéalo y verifica: al confirmar, el QR desaparece.</p>
+        <div class="row">
+          <input id="mfaQrPass" type="password" placeholder="Su contraseña" autocomplete="current-password">
+          <button type="button" onclick="showQr()">Mostrar QR</button>
+        </div>
+        <div id="mfaQrArea" class="hidden" style="text-align:center;margin-top:.8rem">
+          <img id="mfaQr2" style="width:180px;background:#fff;padding:8px;border-radius:8px">
+          <div class="muted" style="margin:.4rem 0">Clave manual: <b id="mfaKey"></b></div>
+          <div class="row">
+            <input id="mfaVerifyCode" inputmode="numeric" placeholder="Código de la app">
+            <button type="button" class="ok" onclick="verifyDevice()">Verificar y ocultar QR</button>
+          </div>
+        </div>
+      </div>
+      <details style="margin-top:.8rem"><summary class="muted" style="cursor:pointer">Desactivar 2FA…</summary>
+        <label>Contraseña</label><input id="mfaDisPass" type="password" autocomplete="current-password">
+        <label>Código vigente (o de recuperación)</label><input id="mfaDisCode" inputmode="numeric">
+        <div style="margin-top:.7rem"><button class="lnk" onclick="disable2fa()">Desactivar 2FA</button></div>
+      </details>
     </div>
     <div id="mfaMsg"></div>
   </div>
@@ -104,6 +122,22 @@ async function confirm2fa(){
   $('mfaEnroll').classList.add('hidden'); $('mfaRecovery').classList.remove('hidden');
   $('mfaCodes').textContent = (r.d.recovery_codes||[]).join('\n');
   loadUsers();
+}
+async function showQr(){
+  const r = await post('/api/auth/2fa/qr', {password: $('mfaQrPass').value});
+  if(!r.ok){ $('mfaMsg').innerHTML = `<div class="msg e">${esc(r.d.error||'Error')}</div>`; return; }
+  $('mfaMsg').innerHTML = '';
+  $('mfaQrPass').value = '';
+  $('mfaQr2').src = 'data:image/png;base64,' + r.d.qr_png_base64;
+  $('mfaKey').textContent = r.d.setup_key;
+  $('mfaQrArea').classList.remove('hidden');
+}
+async function verifyDevice(){
+  const r = await post('/api/auth/2fa/verify', {code: $('mfaVerifyCode').value.trim()});
+  if(!r.ok){ $('mfaMsg').innerHTML = `<div class="msg e">${esc(r.d.error||'Código incorrecto')}</div>`; return; }
+  $('mfaQr2').src = ''; $('mfaKey').textContent = ''; $('mfaVerifyCode').value = '';
+  $('mfaQrArea').classList.add('hidden');
+  $('mfaMsg').innerHTML = '<div class="msg s">✔ Dispositivo registrado correctamente. El QR fue ocultado.</div>';
 }
 async function disable2fa(){
   const r = await post('/api/auth/2fa/disable', {password:$('mfaDisPass').value, code:$('mfaDisCode').value.trim()});

@@ -682,6 +682,73 @@ def api_2fa_disable():
         put_db(conn)
 
 
+@app.route("/api/auth/2fa/qr", methods=["POST"])
+@rate_limit(10, 60)
+@require_auth()
+def api_2fa_qr():
+    """Re-muestra el QR del 2FA ya activado (enrolar el telefono / cambio de
+    dispositivo). Exige la contrasena; el QR se genera al vuelo y no se persiste."""
+    cu = request.current_user
+    password = (request.get_json(silent=True) or {}).get("password", "")
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT username,password_hash,totp_secret,totp_enabled "
+                        "FROM pago_users WHERE id=%s", (cu["user_id"],))
+            row = cur.fetchone()
+        if not row or not row["totp_enabled"] or not row["totp_secret"]:
+            return jsonify({"error": "2FA no esta activado"}), 400
+        if not password or not bcrypt.checkpw(password.encode(), row["password_hash"].encode()):
+            log_audit(cu["user_id"], "2FA_QR_DENIED", "Auth", None, None, _client_ip())
+            return jsonify({"error": "Contrasena incorrecta"}), 401
+        try:
+            secret = dimed_2fa.decrypt_secret(row["totp_secret"], JWT_SECRET)
+        except ValueError:
+            return jsonify({"error": "Secreto ilegible; desactive y reactive el 2FA"}), 500
+        uri = dimed_2fa.provisioning_uri(secret, row["username"], "Dimed Pago")
+        log_audit(cu["user_id"], "2FA_QR_VIEWED", "Auth", None, None, _client_ip())
+        return jsonify({"otpauth_uri": uri, "qr_png_base64": dimed_2fa.qr_png_base64(uri),
+                        "setup_key": secret}), 200
+    finally:
+        put_db(conn)
+
+
+@app.route("/api/auth/2fa/verify", methods=["POST"])
+@rate_limit(10, 60)
+@require_auth()
+def api_2fa_verify():
+    """Confirma que el autenticador quedo bien registrado (el QR se oculta al pasar)."""
+    cu = request.current_user
+    code = (request.get_json(silent=True) or {}).get("code", "")
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT totp_secret,totp_last_counter,totp_enabled "
+                        "FROM pago_users WHERE id=%s", (cu["user_id"],))
+            row = cur.fetchone()
+        if not row or not row["totp_enabled"] or not row["totp_secret"]:
+            return jsonify({"error": "2FA no esta activado"}), 400
+        try:
+            secret = dimed_2fa.decrypt_secret(row["totp_secret"], JWT_SECRET)
+        except ValueError:
+            return jsonify({"error": "Error interno"}), 500
+        ok, counter = dimed_2fa.verify_code(secret, code, row["totp_last_counter"])
+        if not ok:
+            return jsonify({"error": "Codigo incorrecto"}), 401
+        with conn.cursor() as cur:
+            cur.execute("UPDATE pago_users SET totp_last_counter=%s WHERE id=%s",
+                        (counter, cu["user_id"]))
+        conn.commit()
+        log_audit(cu["user_id"], "2FA_DEVICE_VERIFIED", "Auth", None, None, _client_ip())
+        return jsonify({"ok": True}), 200
+    except Exception:
+        conn.rollback()
+        log.exception("Error verificando dispositivo 2FA")
+        return jsonify({"error": "Error interno"}), 500
+    finally:
+        put_db(conn)
+
+
 # ---------------------------------------------------------------------------
 # Usuarios (staff)
 # ---------------------------------------------------------------------------

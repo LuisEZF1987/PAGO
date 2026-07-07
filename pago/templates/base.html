@@ -35,6 +35,9 @@
     .brand h1 { margin:0; font-size:1.15rem; font-weight:700; }
     .brand h1 .ac { color:var(--accent); }
     .brand p { margin:.1rem 0 0; color:var(--muted); font-size:.72rem; }
+    .dimed-brand-logo{width:34px;height:34px;object-fit:contain;flex-shrink:0}
+    [data-theme="dark"] .logo-claro{display:none}
+    [data-theme="light"] .logo-oscuro{display:none}
     nav.side { margin-top:1.4rem; display:flex; flex-direction:column; gap:.15rem; flex:1; }
     .nav-item { display:flex; align-items:center; gap:.6rem; padding:.55rem .75rem; border-radius:.5rem;
                 color:var(--muted); font-size:.88rem; cursor:pointer; transition:all .15s; }
@@ -88,9 +91,13 @@
 </head>
 <body>
   <aside class="sidebar">
-    <div class="brand">
-      <h1>Dimed<span class="ac">·Pago</span></h1>
-      <p>Cobros y pagos</p>
+    <div class="brand" style="display:flex;align-items:center;gap:10px">
+      <img src="/static/logo-white.png" class="dimed-brand-logo logo-oscuro" alt="Dimed">
+      <img src="/static/logo-blue.png"  class="dimed-brand-logo logo-claro"  alt="Dimed">
+      <div>
+        <h1>Dimed<span class="ac">·Pago</span></h1>
+        <p>Cobros y pagos</p>
+      </div>
     </div>
     <nav class="side">
       <a class="nav-item {% if page=='dashboard' %}active{% endif %}" href="/">
