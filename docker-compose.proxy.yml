@@ -1,0 +1,15 @@
+# Overlay para correr detras del proxy Caddy (VPS): une el servicio a la red
+# externa compartida para que el proxy lo alcance por nombre de contenedor.
+# Uso: docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d
+services:
+  pago:
+    environment:
+      FLASK_ENV: production   # activa el flag Secure de las cookies (solo HTTPS)
+    networks:
+      backend: {}
+      proxy: {}
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NET:-dimed-shared}
