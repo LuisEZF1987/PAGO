@@ -3,12 +3,13 @@ kushki.py con class KushkiGateway) y sumarla a _REGISTRY; nada mas cambia."""
 import os
 
 from .base import GatewayError, GatewayResult, PaymentGateway, WebhookEvent  # noqa: F401
+from .paypal import PayPalGateway
 from .sandbox import SandboxGateway
 
 _REGISTRY = {
     "sandbox": SandboxGateway,
-    # "kushki": KushkiGateway,   # cuando haya cuenta de comercio
-    # "paypal": PayPalGateway,   # para clientes del exterior
+    "paypal": PayPalGateway,
+    # "kushki": KushkiGateway,   # cuando haya cuenta con procesador local (diferidos)
 }
 
 

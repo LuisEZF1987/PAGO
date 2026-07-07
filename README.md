@@ -22,13 +22,21 @@ stack: Flask + PostgreSQL 16 + Docker, JWT + 2FA TOTP, tema claro/oscuro.
 
 ## Pasarelas de tarjeta (arquitectura pluggable)
 
-La pasarela activa se elige con la variable `GATEWAY` (`.env`). Incluida:
+La pasarela activa se elige con la variable `GATEWAY` (`.env`). Incluidas:
 
 - `sandbox` — **simulada**, para probar todo el flujo sin cuenta de comercio
   ni dinero real (resultados deterministas: aprobada / rechazada / fondos
   insuficientes / error de pasarela).
+- `paypal` — **real** (Checkout/Orders API v2 + SDK JS de botones). Flujo
+  orden→captura: el pagador aprueba en la ventana de PayPal (tarjeta o cuenta
+  PayPal) y el servidor captura. Config: `PAYPAL_ENV` (live/sandbox),
+  `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` (crear una app REST en
+  developer.paypal.com → Apps & Credentials). El dinero cae en el saldo
+  PayPal Business y de ahí se retira al banco. Reembolsos integrados
+  (usa `gateway_capture_ref`). Nota: si hay un proxy con CSP delante, debe
+  permitir `*.paypal.com` y `*.paypalobjects.com` (script/connect/frame/img).
 
-Para agregar una real (Kushki, PayPal, Datafast, Nuvei, …):
+Para agregar otra (Kushki, Datafast, Nuvei, …):
 
 1. Crear `pago/gateways/<nombre>.py` implementando el Protocol
    `PaymentGateway` de `pago/gateways/base.py`

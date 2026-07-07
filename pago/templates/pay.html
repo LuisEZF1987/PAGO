@@ -115,6 +115,14 @@
 
     {% if can_card %}
     <div id="paneCard" class="pane">
+      {% if gateway == 'paypal' %}
+      <p class="sub">Pague con su tarjeta o cuenta PayPal — procesado de forma segura por PayPal.</p>
+      {% if not paypal_client_id %}
+      <div class="msg w">PayPal aún no está configurado en el servidor. Use transferencia o contacte a la empresa.</div>
+      {% endif %}
+      <div id="paypal-buttons" style="margin-top:.8rem"></div>
+      <div id="cardMsg"></div>
+      {% else %}
       {% if gateway == 'sandbox' %}
       <div class="sandbox">⚠ MODO PRUEBA — no se cobrará dinero real.
         <label>Resultado simulado</label>
@@ -139,6 +147,7 @@
       </div>
       <button class="pay" id="btnCard" onclick="payCard()">Pagar ${{ '%.2f'|format(charge.amount) }}</button>
       <div id="cardMsg"></div>
+      {% endif %}
     </div>
     {% endif %}
 
@@ -201,6 +210,39 @@
     const rc = document.getElementById('resultCard');
     rc.innerHTML = html; rc.classList.remove('hidden');
   }
+  {% if gateway == 'paypal' %}
+  function initPayPal(){
+    const msg = document.getElementById('cardMsg');
+    if(!window.paypal){ msg.innerHTML = '<div class="msg e">No se pudo cargar PayPal. Recargue la página.</div>'; return; }
+    paypal.Buttons({
+      style: {layout:'vertical', label:'pay'},
+      createOrder: async () => {
+        const r = await fetch(`/api/public/pay/${TOKEN}/paypal/order`,
+          {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+        const d = await r.json();
+        if(!r.ok) throw new Error(d.error || 'No se pudo iniciar el pago');
+        return d.order_id;
+      },
+      onApprove: async (data, actions) => {
+        const r = await fetch(`/api/public/pay/${TOKEN}/paypal/capture`,
+          {method:'POST', headers:{'Content-Type':'application/json'},
+           body: JSON.stringify({order_id: data.orderID})});
+        const d = await r.json();
+        if(r.ok && d.status === 'aprobado'){
+          showResult(`<div class="big">✅</div><h2>¡Pago aprobado!</h2>
+            <p class="sub">Recibo ${esc(d.receipt_number)}</p>
+            <p><a href="${esc(d.recibo_url)}">Descargar recibo (PDF)</a></p>`);
+        } else if(r.ok && d.retry){
+          msg.innerHTML = `<div class="msg e">${esc(d.message)}</div>`;
+          return actions.restart();
+        } else {
+          msg.innerHTML = `<div class="msg e">${esc(d.message || d.error || 'No se pudo procesar el pago')}</div>`;
+        }
+      },
+      onError: () => { msg.innerHTML = '<div class="msg e">Error de PayPal. Recargue la página e intente de nuevo.</div>'; }
+    }).render('#paypal-buttons');
+  }
+  {% endif %}
   async function payCard(){
     const btn = document.getElementById('btnCard'); btn.disabled = true;
     const sbx = document.getElementById('sbxOutcome');
@@ -246,5 +288,10 @@
   }
   {% endif %}
 </script>
+{% if state == 'activo' and gateway == 'paypal' and paypal_client_id and 'tarjeta' in charge.allowed_methods %}
+<script src="https://www.paypal.com/sdk/js?client-id={{ paypal_client_id }}&currency={{ charge.currency }}&intent=capture"
+        onload="initPayPal()"
+        onerror="document.getElementById('cardMsg').innerHTML='<div class=\'msg e\'>No se pudo cargar PayPal.</div>'"></script>
+{% endif %}
 </body>
 </html>

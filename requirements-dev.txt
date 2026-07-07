@@ -8,5 +8,6 @@ pyotp>=2.9
 cryptography>=42.0
 qrcode>=8.0
 pypng>=0.20220715.0
+requests>=2
 reportlab>=4
 openpyxl>=3

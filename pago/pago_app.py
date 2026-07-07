@@ -1359,7 +1359,8 @@ def api_payments_refund(pid):
                 if not known_gateway(p["gateway"] or ""):
                     return jsonify({"error": f"Gateway '{p['gateway']}' no disponible"}), 400
                 try:
-                    res = get_gateway(p["gateway"]).refund(p["gateway_ref"])
+                    # PayPal (flujo orden/captura): el reembolso usa el id de CAPTURA.
+                    res = get_gateway(p["gateway"]).refund(p.get("gateway_capture_ref") or p["gateway_ref"])
                 except GatewayError as e:
                     conn.rollback()
                     return jsonify({"error": f"La pasarela no respondio: {e}"}), 502
@@ -1650,7 +1651,8 @@ def _public_context(cur, charge):
     banks = [dict(r) for r in cur.fetchall()]
     return {"config": config, "banks": banks,
             "charge": charge, "state": link_state(charge["status"], charge.get("link_expires_at")),
-            "gateway": os.environ.get("GATEWAY", "sandbox")}
+            "gateway": os.environ.get("GATEWAY", "sandbox"),
+            "paypal_client_id": os.environ.get("PAYPAL_CLIENT_ID", "")}
 
 
 @app.route("/pay/<token>")
@@ -1748,6 +1750,160 @@ def public_pay_card(token):
     except Exception:
         conn.rollback()
         log.exception("Error en pago con tarjeta")
+        return jsonify({"error": "Error interno"}), 500
+    finally:
+        put_db(conn)
+
+
+@app.route("/api/public/pay/<token>/paypal/order", methods=["POST"])
+@rate_limit(10, 60)
+def public_paypal_order(token):
+    """Paso 1 del flujo PayPal: crea la orden que el SDK JS presenta al pagador."""
+    gw = get_gateway()
+    if not getattr(gw, "supports_orders", False):
+        return jsonify({"error": "PayPal no esta habilitado"}), 409
+    data = request.get_json(silent=True) or {}
+    ip = _client_ip()
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            charge = _load_charge_by_token(cur, token)
+            if not charge:
+                return jsonify({"error": "Enlace no valido"}), 404
+            state = link_state(charge["status"], charge.get("link_expires_at"))
+            if state != "activo":
+                return jsonify({"error": "Este enlace ya no admite pagos", "state": state}), 409
+            if "tarjeta" not in (charge["allowed_methods"] or []):
+                return jsonify({"error": "Este cobro no acepta tarjeta/PayPal"}), 409
+            cur.execute("SELECT COUNT(*) AS n FROM pago_payments WHERE charge_id=%s AND method='tarjeta' "
+                        "AND created_at > NOW() - INTERVAL '15 minutes'", (charge["id"],))
+            if cur.fetchone()["n"] >= 5:
+                return jsonify({"error": "Demasiados intentos. Espere unos minutos."}), 429
+            cur.execute(
+                "INSERT INTO pago_payments (charge_id,method,amount,currency,status,gateway,"
+                "payer_name,payer_email,payer_ip) VALUES (%s,'tarjeta',%s,%s,'iniciado',%s,%s,%s,%s) "
+                "RETURNING id",
+                (charge["id"], charge["amount"], charge["currency"], gw.name,
+                 (data.get("payer_name") or "").strip()[:120] or None,
+                 (data.get("payer_email") or "").strip()[:200] or None, ip))
+            pid = cur.fetchone()["id"]
+        conn.commit()   # el intento queda registrado aunque PayPal falle
+
+        try:
+            res = gw.create_order(amount=charge["amount"], currency=charge["currency"],
+                                  description=charge["concept"], reference=str(pid))
+        except GatewayError as e:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE pago_payments SET error_message=%s, updated_at=NOW() WHERE id=%s",
+                            (str(e), pid))
+            conn.commit()
+            return jsonify({"error": "No se pudo contactar a PayPal. Intente de nuevo."}), 502
+
+        with conn.cursor() as cur:
+            cur.execute("UPDATE pago_payments SET gateway_ref=%s, gateway_status=%s, "
+                        "updated_at=NOW() WHERE id=%s", (res.gateway_ref, res.raw_status, pid))
+        conn.commit()
+        return jsonify({"order_id": res.gateway_ref}), 200
+    except Exception:
+        conn.rollback()
+        log.exception("Error creando orden PayPal")
+        return jsonify({"error": "Error interno"}), 500
+    finally:
+        put_db(conn)
+
+
+@app.route("/api/public/pay/<token>/paypal/capture", methods=["POST"])
+@rate_limit(15, 60)
+def public_paypal_capture(token):
+    """Paso 2 del flujo PayPal: el pagador ya aprobo; capturamos el dinero."""
+    gw = get_gateway()
+    if not getattr(gw, "supports_orders", False):
+        return jsonify({"error": "PayPal no esta habilitado"}), 409
+    order_id = ((request.get_json(silent=True) or {}).get("order_id") or "").strip()
+    if not order_id:
+        return jsonify({"error": "order_id requerido"}), 400
+    ip = _client_ip()
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            charge = _load_charge_by_token(cur, token)
+            if not charge:
+                return jsonify({"error": "Enlace no valido"}), 404
+            cur.execute("SELECT * FROM pago_payments WHERE charge_id=%s AND gateway_ref=%s "
+                        "AND method='tarjeta' AND status='iniciado'", (charge["id"], order_id))
+            payment = cur.fetchone()
+            if not payment:
+                return jsonify({"error": "Orden no encontrada o ya procesada"}), 404
+            if link_state(charge["status"], charge.get("link_expires_at")) != "activo":
+                return jsonify({"error": "Este enlace ya no admite pagos"}), 409
+
+        try:
+            res = gw.capture_order(order_id)
+        except GatewayError as e:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE pago_payments SET error_message=%s, updated_at=NOW() WHERE id=%s",
+                            (str(e), payment["id"]))
+            conn.commit()
+            return jsonify({"error": "No se pudo confirmar con PayPal. Intente de nuevo."}), 502
+
+        if res.ok:
+            capture_id = res.extra.get("capture_id") or ""
+            try:
+                with conn.cursor() as cur:
+                    receipt = _next_receipt(cur)
+                    cur.execute("UPDATE pago_payments SET status='aprobado', gateway_status=%s, "
+                                "gateway_capture_ref=%s, card_brand=%s, card_last4=%s, "
+                                "payer_email=COALESCE(payer_email,%s), receipt_number=%s, "
+                                "updated_at=NOW() WHERE id=%s",
+                                (res.raw_status, capture_id, res.card_brand, res.card_last4,
+                                 res.extra.get("payer_email") or None, receipt, payment["id"]))
+                    _set_charge_status(cur, charge["id"], charge["status"], "pagado")
+                conn.commit()
+            except (psycopg2.errors.UniqueViolation, ValueError):
+                # El cobro ya tenia un pago exitoso pero PayPal YA capturo el
+                # dinero: se reembolsa de inmediato para no cobrar dos veces.
+                conn.rollback()
+                try:
+                    gw.refund(capture_id or order_id)
+                    note = "duplicado: captura reembolsada automaticamente"
+                except GatewayError:
+                    note = "DUPLICADO SIN REEMBOLSAR: reembolsar a mano en PayPal"
+                    log.error("PayPal: captura duplicada %s sin reembolso automatico", capture_id)
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE pago_payments SET status='rechazado', error_message=%s, "
+                                "gateway_capture_ref=%s, updated_at=NOW() WHERE id=%s",
+                                (note, capture_id, payment["id"]))
+                conn.commit()
+                log_audit(None, "PAYPAL_DUPLICATE_CAPTURE", "Payment", payment["id"],
+                          {"charge": charge["code"], "note": note}, ip)
+                return jsonify({"error": "Este cobro ya fue pagado"}), 409
+            log_audit(None, "CARD_PAYMENT_APPROVED", "Payment", payment["id"],
+                      {"charge": charge["code"], "gateway_ref": order_id,
+                       "capture": capture_id, "gateway": gw.name}, ip)
+            return jsonify({"status": "aprobado", "receipt_number": receipt,
+                            "recibo_url": f"/pay/{token}/recibo.pdf"}), 200
+
+        retry = bool(res.extra.get("retry"))
+        with conn.cursor() as cur:
+            if retry:
+                # INSTRUMENT_DECLINED: el SDK reintenta con LA MISMA orden, asi
+                # que el pago sigue 'iniciado' para que la proxima captura funcione.
+                cur.execute("UPDATE pago_payments SET gateway_status=%s, error_message=%s, "
+                            "updated_at=NOW() WHERE id=%s",
+                            (res.raw_status, res.message, payment["id"]))
+            else:
+                cur.execute("UPDATE pago_payments SET status='rechazado', gateway_status=%s, "
+                            "error_message=%s, updated_at=NOW() WHERE id=%s",
+                            (res.raw_status, res.message, payment["id"]))
+        conn.commit()
+        log_audit(None, "CARD_PAYMENT_DECLINED", "Payment", payment["id"],
+                  {"charge": charge["code"], "message": res.message, "gateway": gw.name,
+                   "retry": retry}, ip)
+        return jsonify({"status": "rechazado", "message": res.message or "PayPal rechazo el pago",
+                        "retry": retry}), 200
+    except Exception:
+        conn.rollback()
+        log.exception("Error capturando orden PayPal")
         return jsonify({"error": "Error interno"}), 500
     finally:
         put_db(conn)
