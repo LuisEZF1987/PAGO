@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${STACK:-dimed-pago}-postgres
+    environment:
+      POSTGRES_DB: dimed_pago
+      POSTGRES_USER: dimed
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dimed -d dimed_pago"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  init:
+    image: postgres:16-alpine
+    container_name: ${STACK:-dimed-pago}-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_USER: dimed
+      DB_NAME: dimed_pago
+      PGPASSWORD: ${PG_PASSWORD}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+    command: ["sh", "/run-migrations.sh"]
+    volumes:
+      - ./migrations:/migrations:ro
+      - ./scripts/run-migrations.sh:/run-migrations.sh:ro
+    networks:
+      - backend
+
+  pago:
+    build: ./pago
+    container_name: ${STACK:-dimed-pago}-core
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    ports:
+      - "${WEB_PORT:-9850}:9000"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: dimed_pago
+      PG_USER: dimed_app
+      PG_PASSWORD: ${APP_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:9850}
+      GATEWAY: ${GATEWAY:-sandbox}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
+      FLASK_DEBUG: ${FLASK_DEBUG:-0}
+    volumes:
+      - pago-uploads:/app/uploads
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:9000/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  pgdata:
+  pago-uploads:
+
+networks:
+  backend:
+    driver: bridge

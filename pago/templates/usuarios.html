@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Dimed Pago — Usuarios{% endblock %}
+{% block content %}
+<div class="pagehead"><h2>Usuarios y seguridad</h2></div>
+<div class="grid2">
+  <div class="card">
+    <h3>Nuevo usuario</h3>
+    <form onsubmit="return createUser(event)">
+      <label>Nombre completo *</label><input id="uName" required>
+      <div class="row">
+        <div><label>Usuario *</label><input id="uUser" required autocomplete="off"></div>
+        <div><label>Rol</label><select id="uRole"><option value="cobrador">Cobrador</option><option value="admin">Administrador</option></select></div>
+      </div>
+      <label>Email *</label><input id="uEmail" type="email" required>
+      <label>Contraseña * (mín. 12, combinar mayúsculas/números/símbolos)</label>
+      <input id="uPass" type="password" required autocomplete="new-password">
+      <div style="margin-top:.9rem"><button type="submit">Crear usuario</button></div>
+      <div id="uMsg"></div>
+    </form>
+  </div>
+  <div class="card">
+    <h3>Mi seguridad (2FA)</h3>
+    <div id="mfaOff" class="hidden">
+      <p class="muted">Proteja su cuenta con verificación en dos pasos (app autenticadora).</p>
+      <button onclick="enroll()">Activar 2FA</button>
+    </div>
+    <div id="mfaEnroll" class="hidden">
+      <p class="muted">1) Escanee el QR con Google Authenticator / Authy. 2) Ingrese el código.</p>
+      <div style="text-align:center"><img id="mfaQr" style="width:180px;background:#fff;padding:8px;border-radius:8px"></div>
+      <label>Código de la app</label><input id="mfaCode" inputmode="numeric" placeholder="123456">
+      <div style="margin-top:.7rem"><button onclick="confirm2fa()">Confirmar</button></div>
+    </div>
+    <div id="mfaRecovery" class="hidden">
+      <div class="msg s">2FA activado. GUARDE estos códigos de recuperación (un solo uso):</div>
+      <pre id="mfaCodes" style="background:var(--input-bg);padding:.8rem;border-radius:.5rem"></pre>
+    </div>
+    <div id="mfaOn" class="hidden">
+      <div class="msg s">2FA está ACTIVADO en su cuenta.</div>
+      <label>Contraseña</label><input id="mfaDisPass" type="password" autocomplete="current-password">
+      <label>Código vigente (o de recuperación)</label><input id="mfaDisCode" inputmode="numeric">
+      <div style="margin-top:.7rem"><button class="lnk" onclick="disable2fa()">Desactivar 2FA</button></div>
+    </div>
+    <div id="mfaMsg"></div>
+  </div>
+</div>
+<div class="card">
+  <h3>Listado</h3>
+  <table><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>2FA</th><th>Último ingreso</th><th></th></tr></thead>
+  <tbody id="tb"></tbody></table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadUsers(){
+  const r = await api('/api/pago/usuarios');
+  if(!r.ok){ $('tb').innerHTML = `<tr><td colspan="6" class="muted">${esc(r.d.error||'Sin acceso')}</td></tr>`; return; }
+  $('tb').innerHTML = (r.d.users||[]).map(u => {
+    const su = u.role === 'super_admin';
+    let acts = '';
+    if(!su){
+      acts = `<button class="mini sec" onclick="toggleActive('${u.id}', ${!u.is_active})">${u.is_active?'Desactivar':'Activar'}</button>
+              <button class="mini sec" onclick="resetPass('${u.id}')">Reset clave</button>`;
+    }
+    return `<tr ${u.is_active?'':'style="opacity:.5"'}><td>${esc(u.username)}</td><td>${esc(u.full_name)}</td>
+      <td><span class="pill">${esc(u.role)}</span></td>
+      <td>${u.totp_enabled?'<span class="pill s">sí</span>':'<span class="pill w">no</span>'}</td>
+      <td class="muted">${esc((u.last_login||'').slice(0,16).replace('T',' ')||'nunca')}</td><td>${acts}</td></tr>`;
+  }).join('');
+}
+async function createUser(e){
+  e.preventDefault();
+  const r = await post('/api/pago/usuarios', {full_name:$('uName').value.trim(), username:$('uUser').value.trim(),
+    email:$('uEmail').value.trim(), role:$('uRole').value, password:$('uPass').value});
+  $('uMsg').innerHTML = r.ok ? '<div class="msg s">Usuario creado</div>' : `<div class="msg e">${esc(r.d.error||'Error')}</div>`;
+  if(r.ok){ ['uName','uUser','uEmail','uPass'].forEach(i=>$(i).value=''); loadUsers(); }
+  return false;
+}
+async function toggleActive(id, active){
+  const r = await put('/api/pago/usuarios/'+id, {is_active: active});
+  if(r.ok) loadUsers(); else alert(r.d.error||'Error');
+}
+async function resetPass(id){
+  const pw = prompt('Nueva contraseña (mín. 12, combinar clases):');
+  if(!pw) return;
+  const r = await put('/api/pago/usuarios/'+id, {password: pw});
+  if(r.ok) alert('Contraseña actualizada'); else alert(r.d.error||'Error');
+}
+// ----- 2FA propio -----
+async function mfaStatus(){
+  const r = await api('/api/auth/2fa');
+  if(!r.ok) return;
+  $('mfaOff').classList.toggle('hidden', r.d.enabled);
+  $('mfaOn').classList.toggle('hidden', !r.d.enabled);
+}
+async function enroll(){
+  const r = await post('/api/auth/2fa/enroll');
+  if(!r.ok){ $('mfaMsg').innerHTML=`<div class="msg e">${esc(r.d.error||'Error')}</div>`; return; }
+  $('mfaOff').classList.add('hidden'); $('mfaEnroll').classList.remove('hidden');
+  $('mfaQr').src = 'data:image/png;base64,' + r.d.qr_png_base64;
+}
+async function confirm2fa(){
+  const r = await post('/api/auth/2fa/confirm', {code:$('mfaCode').value.trim()});
+  if(!r.ok){ $('mfaMsg').innerHTML=`<div class="msg e">${esc(r.d.error||'Error')}</div>`; return; }
+  $('mfaEnroll').classList.add('hidden'); $('mfaRecovery').classList.remove('hidden');
+  $('mfaCodes').textContent = (r.d.recovery_codes||[]).join('\n');
+  loadUsers();
+}
+async function disable2fa(){
+  const r = await post('/api/auth/2fa/disable', {password:$('mfaDisPass').value, code:$('mfaDisCode').value.trim()});
+  if(!r.ok){ $('mfaMsg').innerHTML=`<div class="msg e">${esc(r.d.error||'Error')}</div>`; return; }
+  $('mfaMsg').innerHTML='<div class="msg s">2FA desactivado</div>'; mfaStatus(); loadUsers();
+}
+whoami().then(u => { if(u){ loadUsers(); mfaStatus(); } });
+</script>
+{% endblock %}

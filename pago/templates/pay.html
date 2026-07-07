@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ (config.get('company_name') or 'Pago en línea') }} — Pago seguro</title>
+  <style>
+    :root, [data-theme="light"] { --bg:#f1f5f9; --surface:#ffffff; --border:#e2e8f0; --text:#0f172a;
+      --muted:#64748b; --accent:#047857; --accent2:#065f46; --input:#f8fafc; --danger:#c0392b;
+      --success:#1e8449; --success-soft:rgba(30,132,73,.1); --danger-soft:rgba(192,57,43,.08);
+      --warn:#b9770e; --warn-soft:rgba(185,119,14,.12); }
+    [data-theme="dark"] { --bg:#020617; --surface:rgba(15,23,42,.7); --border:rgba(51,65,85,.5); --text:#e2e8f0;
+      --muted:#94a3b8; --accent:#34d399; --accent2:#065f46; --input:#0f172a; --danger:#ef4444;
+      --success:#22c55e; --success-soft:rgba(34,197,94,.12); --danger-soft:rgba(239,68,68,.12);
+      --warn:#f59e0b; --warn-soft:rgba(245,158,11,.14); }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:var(--text);
+           font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; display:flex; justify-content:center; padding:1.2rem; }
+    .wrap { width:100%; max-width:520px; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:1.4rem 1.5rem; margin-bottom:1rem; }
+    h1 { margin:0; font-size:1.25rem; } h1 .ac { color:var(--accent); }
+    .sub { color:var(--muted); font-size:.82rem; margin:.15rem 0 0; }
+    .amount { font-size:2rem; font-weight:800; color:var(--accent); }
+    .row { display:flex; gap:.6rem; } .row > * { flex:1; }
+    label { display:block; font-size:.72rem; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); margin:.6rem 0 .25rem; }
+    input, select { width:100%; padding:.6rem .7rem; background:var(--input); border:1px solid var(--border);
+             border-radius:8px; color:var(--text); font-size:.95rem; outline:none; }
+    input:focus, select:focus { border-color:var(--accent); }
+    button.pay { width:100%; margin-top:1rem; padding:.8rem; background:var(--accent2); color:#fff; border:0;
+                 border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; }
+    button.pay:disabled { opacity:.5; cursor:not-allowed; }
+    .tabs { display:flex; gap:.5rem; margin-bottom:1rem; }
+    .tab { flex:1; text-align:center; padding:.6rem; border:1px solid var(--border); border-radius:8px;
+           cursor:pointer; font-size:.9rem; color:var(--muted); }
+    .tab.active { border-color:var(--accent); color:var(--accent); font-weight:600; }
+    .hidden { display:none; }
+    .msg { font-size:.86rem; padding:.6rem .8rem; border-radius:8px; margin-top:.8rem; }
+    .msg.e { background:var(--danger-soft); color:var(--danger); }
+    .msg.s { background:var(--success-soft); color:var(--success); }
+    .msg.w { background:var(--warn-soft); color:var(--warn); }
+    .bank { border:1px solid var(--border); border-radius:8px; padding:.7rem .8rem; margin-bottom:.6rem; font-size:.88rem; }
+    .bank b { color:var(--accent); }
+    .kv { display:flex; justify-content:space-between; font-size:.9rem; padding:.3rem 0; border-bottom:1px dashed var(--border); }
+    .kv span:first-child { color:var(--muted); }
+    .center { text-align:center; padding:1.4rem 0; }
+    .big { font-size:2.6rem; }
+    .sandbox { background:var(--warn-soft); color:var(--warn); font-size:.8rem; padding:.5rem .7rem; border-radius:8px; margin-bottom:.8rem; }
+    a { color:var(--accent); }
+    .th { position:fixed; top:.8rem; right:1rem; color:var(--muted); font-size:.8rem; cursor:pointer; background:none; border:0; }
+    .foot { text-align:center; color:var(--muted); font-size:.72rem; margin-top:.6rem; }
+  </style>
+</head>
+<body>
+<button class="th" onclick="toggleTheme()">◐ tema</button>
+<div class="wrap">
+  <div class="card">
+    <h1>{{ config.get('company_name') or 'Pago en línea' }}</h1>
+    <p class="sub">
+      {% if config.get('company_ruc') %}RUC {{ config['company_ruc'] }} · {% endif %}
+      {{ config.get('company_phone') or '' }} {{ config.get('company_email') or '' }}
+    </p>
+  </div>
+
+  {% if state == 'invalid' %}
+  <div class="card center"><div class="big">🔗</div>
+    <h2>Enlace no válido</h2>
+    <p class="sub">Este enlace de pago no existe o fue reemplazado. Solicite uno nuevo a la empresa.</p>
+  </div>
+
+  {% elif state == 'vencido' %}
+  <div class="card center"><div class="big">⏰</div>
+    <h2>Enlace vencido</h2>
+    <p class="sub">Este enlace de pago expiró. Solicite uno nuevo a la empresa.</p>
+  </div>
+
+  {% elif state == 'anulado' %}
+  <div class="card center"><div class="big">🚫</div>
+    <h2>Cobro anulado</h2>
+    <p class="sub">Este cobro fue anulado y ya no admite pagos.</p>
+  </div>
+
+  {% elif state == 'pagado' %}
+  <div class="card center"><div class="big">✅</div>
+    <h2>Cobro pagado</h2>
+    <p class="sub">{{ charge.code }} — {{ charge.concept }}</p>
+    <p><a href="/pay/{{ charge.link_token }}/recibo.pdf">Descargar recibo (PDF)</a></p>
+  </div>
+
+  {% elif state == 'en_revision' %}
+  <div class="card center"><div class="big">🕒</div>
+    <h2>Pago en verificación</h2>
+    <p class="sub">Recibimos su comprobante de transferencia y está siendo verificado.
+    Le confirmaremos cuando el pago sea acreditado.</p>
+  </div>
+
+  {% else %}
+  <div class="card">
+    <div class="kv"><span>Cobro</span><b>{{ charge.code }}</b></div>
+    <div class="kv"><span>Concepto</span><b>{{ charge.concept }}</b></div>
+    {% if charge.description %}<div class="kv"><span>Detalle</span><span>{{ charge.description }}</span></div>{% endif %}
+    <div class="kv"><span>Cliente</span><span>{{ charge.customer_name }}</span></div>
+    {% if charge.due_date %}<div class="kv"><span>Vence</span><span>{{ charge.due_date }}</span></div>{% endif %}
+    <div style="text-align:center;margin-top: .9rem">
+      <div class="amount">${{ '%.2f'|format(charge.amount) }} <small style="font-size:1rem">{{ charge.currency }}</small></div>
+    </div>
+  </div>
+
+  <div class="card" id="payCard">
+    {% set can_card = 'tarjeta' in charge.allowed_methods %}
+    {% set can_transfer = 'transferencia' in charge.allowed_methods %}
+    <div class="tabs">
+      {% if can_card %}<div class="tab active" id="tabCard" onclick="showTab('card')">💳 Tarjeta</div>{% endif %}
+      {% if can_transfer %}<div class="tab {% if not can_card %}active{% endif %}" id="tabTransfer" onclick="showTab('transfer')">🏦 Transferencia</div>{% endif %}
+    </div>
+
+    {% if can_card %}
+    <div id="paneCard" class="pane">
+      {% if gateway == 'sandbox' %}
+      <div class="sandbox">⚠ MODO PRUEBA — no se cobrará dinero real.
+        <label>Resultado simulado</label>
+        <select id="sbxOutcome">
+          <option value="tok_ok">Aprobada</option>
+          <option value="tok_rechazada">Rechazada por el emisor</option>
+          <option value="tok_fondos">Fondos insuficientes</option>
+          <option value="tok_error">Error de la pasarela</option>
+        </select>
+      </div>
+      {% endif %}
+      <!-- Inputs SIN atributo name: son decorativos; el numero de tarjeta JAMAS viaja a este servidor.
+           Con una pasarela real, su SDK JS tokeniza la tarjeta en el navegador. -->
+      <label>Número de tarjeta</label><input inputmode="numeric" placeholder="4242 4242 4242 4242" autocomplete="off">
+      <div class="row">
+        <div><label>Vencimiento</label><input placeholder="MM/AA" autocomplete="off"></div>
+        <div><label>CVV</label><input inputmode="numeric" placeholder="123" autocomplete="off" type="password"></div>
+      </div>
+      <div class="row">
+        <div><label>Nombre del titular</label><input id="cardName" autocomplete="name"></div>
+        <div><label>Email (para constancia)</label><input id="cardEmail" type="email" autocomplete="email"></div>
+      </div>
+      <button class="pay" id="btnCard" onclick="payCard()">Pagar ${{ '%.2f'|format(charge.amount) }}</button>
+      <div id="cardMsg"></div>
+    </div>
+    {% endif %}
+
+    {% if can_transfer %}
+    <div id="paneTransfer" class="pane {% if can_card %}hidden{% endif %}">
+      <p class="sub" style="margin-bottom:.6rem">1) Transfiera a una de estas cuentas. 2) Suba el comprobante.</p>
+      {% for b in banks %}
+      <div class="bank"><b>{{ b.bank_name }}</b> — {{ b.account_type }} <b>{{ b.account_number }}</b><br>
+        Titular: {{ b.holder_name }}{% if b.holder_doc %} ({{ b.holder_doc }}){% endif %}
+        {% if b.swift_bic %}<br>SWIFT/BIC: {{ b.swift_bic }}{% endif %}
+        {% if b.extra_instructions %}<br><span class="sub">{{ b.extra_instructions }}</span>{% endif %}
+      </div>
+      {% else %}
+      <div class="msg w">La empresa aún no publicó cuentas bancarias; contáctela directamente.</div>
+      {% endfor %}
+      <form id="trForm" onsubmit="return payTransfer(event)">
+        <div class="row">
+          <div><label>Nº de referencia *</label><input id="trRef" required></div>
+          <div><label>Banco desde el que pagó</label><input id="trBank"></div>
+        </div>
+        <div class="row">
+          <div><label>Fecha de transferencia</label><input id="trDate" type="date"></div>
+          <div><label>Su nombre</label><input id="trName"></div>
+        </div>
+        <label>Email (para constancia)</label><input id="trEmail" type="email">
+        <label>Comprobante * (JPG, PNG o PDF, máx. {{ max_upload_mb or 10 }} MB)</label>
+        <input id="trFile" type="file" accept=".jpg,.jpeg,.png,.pdf" required>
+        <button class="pay" id="btnTransfer" type="submit">Enviar comprobante</button>
+      </form>
+      <div id="trMsg"></div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card hidden center" id="resultCard"></div>
+  {% endif %}
+
+  <div class="foot">Pago procesado por Dimed·Pago · Sus datos de tarjeta nunca se almacenan en este servidor</div>
+</div>
+
+<script>
+  function applyTheme(t){ document.documentElement.setAttribute('data-theme', t); }
+  function toggleTheme(){ const c=document.documentElement.getAttribute('data-theme')||'light';
+    const n=c==='light'?'dark':'light'; localStorage.setItem('pago-pub-theme',n); applyTheme(n); }
+  applyTheme(localStorage.getItem('pago-pub-theme')||'light');
+
+  {% if state == 'activo' %}
+  const TOKEN = {{ charge.link_token|tojson }};
+  const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function showTab(t){
+    const card = document.getElementById('paneCard'), tr = document.getElementById('paneTransfer');
+    if(card) card.classList.toggle('hidden', t!=='card');
+    if(tr) tr.classList.toggle('hidden', t!=='transfer');
+    const tc = document.getElementById('tabCard'), tt = document.getElementById('tabTransfer');
+    if(tc) tc.classList.toggle('active', t==='card');
+    if(tt) tt.classList.toggle('active', t==='transfer');
+  }
+  function showResult(html){
+    document.getElementById('payCard').classList.add('hidden');
+    const rc = document.getElementById('resultCard');
+    rc.innerHTML = html; rc.classList.remove('hidden');
+  }
+  async function payCard(){
+    const btn = document.getElementById('btnCard'); btn.disabled = true;
+    const sbx = document.getElementById('sbxOutcome');
+    // Con pasarela real, aqui el SDK JS del gateway tokeniza la tarjeta en el navegador.
+    const card_token = sbx ? sbx.value : 'tok_ok';
+    const r = await fetch(`/api/public/pay/${TOKEN}/card`, {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({card_token, payer_name:document.getElementById('cardName').value,
+                            payer_email:document.getElementById('cardEmail').value})});
+    let d={}; try{ d = await r.json(); }catch(_){}
+    btn.disabled = false;
+    const msg = document.getElementById('cardMsg');
+    if(r.ok && d.status === 'aprobado'){
+      showResult(`<div class="big">✅</div><h2>¡Pago aprobado!</h2>
+        <p class="sub">Recibo ${esc(d.receipt_number)}</p>
+        <p><a href="${esc(d.recibo_url)}">Descargar recibo (PDF)</a></p>`);
+    } else if(r.ok && d.status === 'rechazado'){
+      msg.innerHTML = `<div class="msg e">❌ ${esc(d.message||'Tarjeta rechazada')}. Puede intentar con otra tarjeta.</div>`;
+    } else {
+      msg.innerHTML = `<div class="msg e">${esc(d.error||'No se pudo procesar el pago')}</div>`;
+    }
+  }
+  async function payTransfer(e){
+    e.preventDefault();
+    const btn = document.getElementById('btnTransfer'); btn.disabled = true;
+    const fd = new FormData();
+    fd.append('reference', document.getElementById('trRef').value);
+    fd.append('bank_name', document.getElementById('trBank').value);
+    fd.append('transfer_date', document.getElementById('trDate').value);
+    fd.append('payer_name', document.getElementById('trName').value);
+    fd.append('payer_email', document.getElementById('trEmail').value);
+    fd.append('file', document.getElementById('trFile').files[0]);
+    const r = await fetch(`/api/public/pay/${TOKEN}/transfer`, {method:'POST', body: fd});
+    let d={}; try{ d = await r.json(); }catch(_){}
+    btn.disabled = false;
+    if(r.ok){
+      showResult(`<div class="big">🕒</div><h2>Comprobante recibido</h2>
+        <p class="sub">Su pago será verificado por la empresa. Le confirmaremos la acreditación.</p>`);
+    } else {
+      document.getElementById('trMsg').innerHTML = `<div class="msg e">${esc(d.error||'No se pudo enviar')}</div>`;
+    }
+    return false;
+  }
+  {% endif %}
+</script>
+</body>
+</html>

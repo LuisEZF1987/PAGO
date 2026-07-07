@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Dimed Pago — Dashboard{% endblock %}
+{% block content %}
+<div class="pagehead"><h2>Dashboard</h2><span class="muted" id="hoy"></span></div>
+<div class="grid4">
+  <div class="card"><h3>Cobrado este mes</h3><div class="total" id="stMes">—</div><div class="muted" id="stMesN"></div></div>
+  <div class="card"><h3>Por cobrar</h3><div class="total" id="stPend">—</div><div class="muted" id="stPendN"></div></div>
+  <div class="card"><h3>En revisión</h3><div class="total" id="stRev">—</div><div class="muted">transferencias por conciliar</div></div>
+  <div class="card"><h3>Vencidos</h3><div class="total" id="stVenc">—</div><div class="muted">cobros pasados de fecha</div></div>
+</div>
+<div class="grid2" style="margin-top:1rem">
+  <div class="card">
+    <h3>Por método (este mes)</h3>
+    <table><thead><tr><th>Método</th><th class="num">Pagos</th><th class="num">Total</th></tr></thead>
+    <tbody id="tbMetodo"></tbody></table>
+  </div>
+  <div class="card">
+    <h3>Últimos pagos</h3>
+    <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Método</th><th>Estado</th><th class="num">Monto</th></tr></thead>
+    <tbody id="tbUltimos"></tbody></table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const PILL = {aprobado:'s', pagado:'s', rechazado:'e', anulado:'e', reembolsado:'w', en_revision:'w', iniciado:'', pendiente:''};
+async function load(){
+  if(!await whoami()) return;
+  $('hoy').textContent = new Date().toLocaleDateString('es-EC', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+  const r = await api('/api/pago/dashboard');
+  if(!r.ok) return;
+  const d = r.d;
+  $('stMes').textContent = money(d.cobrado_mes.total);  $('stMesN').textContent = d.cobrado_mes.n + ' pagos';
+  $('stPend').textContent = money(d.pendiente.total);   $('stPendN').textContent = d.pendiente.n + ' cobros pendientes';
+  $('stRev').textContent = d.en_revision;               $('stVenc').textContent = d.vencidos;
+  $('tbMetodo').innerHTML = (d.por_metodo||[]).map(m =>
+    `<tr><td>${esc(m.method)}</td><td class="num">${m.n}</td><td class="num">${money(m.total)}</td></tr>`).join('')
+    || '<tr><td colspan="3" class="muted">Sin pagos este mes</td></tr>';
+  $('tbUltimos').innerHTML = (d.ultimos||[]).map(p =>
+    `<tr><td>${esc((p.created_at||'').slice(0,16).replace('T',' '))}</td><td>${esc(p.customer_name)}</td>
+     <td>${esc(p.method)}</td><td><span class="pill ${PILL[p.status]||''}">${esc(p.status)}</span></td>
+     <td class="num">${money(p.amount)}</td></tr>`).join('')
+    || '<tr><td colspan="5" class="muted">Sin pagos aún</td></tr>';
+}
+load();
+</script>
+{% endblock %}

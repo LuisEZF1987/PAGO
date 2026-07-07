@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Dimed Pago — Cobros{% endblock %}
+{% block content %}
+<div class="pagehead"><h2>Cobros</h2></div>
+<div class="card">
+  <h3>Nuevo cobro</h3>
+  <form onsubmit="return createCharge(event)">
+    <div class="row">
+      <div><label>Cliente *</label><select id="chCustomer" required></select></div>
+      <div><label>Monto USD *</label><input id="chAmount" type="number" step="0.01" min="0.01" required></div>
+      <div><label>Vence</label><input id="chDue" type="date"></div>
+    </div>
+    <label>Concepto *</label><input id="chConcept" required placeholder="Ej.: Monitor de signos vitales — 50% anticipo">
+    <label>Detalle (opcional)</label><input id="chDesc">
+    <div class="row" style="align-items:center; margin-top:.6rem">
+      <label style="margin:0"><input type="checkbox" id="mTarjeta" checked style="width:auto"> Tarjeta</label>
+      <label style="margin:0"><input type="checkbox" id="mTransfer" checked style="width:auto"> Transferencia</label>
+      <button type="submit">Crear cobro y generar enlace</button>
+    </div>
+    <div id="chMsg"></div>
+  </form>
+</div>
+<div class="card">
+  <h3>Listado</h3>
+  <div class="row">
+    <select id="fStatus" onchange="loadCharges()">
+      <option value="">Todos los estados</option><option value="pendiente">Pendiente</option>
+      <option value="en_revision">En revisión</option><option value="pagado">Pagado</option>
+      <option value="reembolsado">Reembolsado</option><option value="anulado">Anulado</option>
+    </select>
+    <input id="fQ" placeholder="Buscar código, concepto o cliente…" oninput="debounceLoad()">
+  </div>
+  <table style="margin-top:.7rem">
+    <thead><tr><th>Código</th><th>Cliente</th><th>Concepto</th><th class="num">Monto</th><th>Estado</th><th>Acciones</th></tr></thead>
+    <tbody id="tb"></tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const PILL = {pagado:'s', anulado:'e', reembolsado:'w', en_revision:'w', pendiente:''};
+let CHARGES = [], deb = null;
+function debounceLoad(){ clearTimeout(deb); deb = setTimeout(loadCharges, 300); }
+
+async function loadCustomers(){
+  const r = await api('/api/pago/clientes');
+  if(!r.ok) return;
+  $('chCustomer').innerHTML = '<option value="">— seleccione —</option>' +
+    (r.d.customers||[]).filter(c=>c.is_active).map(c =>
+      `<option value="${c.id}">${esc(c.name)}${c.doc_number?' ('+esc(c.doc_number)+')':''}</option>`).join('');
+}
+async function loadCharges(){
+  const r = await api(`/api/pago/cobros?status=${$('fStatus').value}&q=${encodeURIComponent($('fQ').value||'')}`);
+  if(!r.ok) return;
+  CHARGES = r.d.charges || [];
+  $('tb').innerHTML = CHARGES.map(c => {
+    const venc = c.vencido ? ' <span class="pill e">vencido</span>' : '';
+    let acts = `<button class="mini sec" onclick="copyLink('${c.id}')">Copiar enlace</button>`;
+    if(c.status==='pendiente' || c.status==='en_revision')
+      acts += ` <button class="mini sec" onclick="relink('${c.id}')">Regenerar</button>`;
+    if(c.status==='pendiente')
+      acts += ` <button class="mini ok" onclick="manualPay('${c.id}')">Pago manual</button>
+                <button class="mini lnk" onclick="voidCharge('${c.id}')">Anular</button>`;
+    return `<tr><td>${esc(c.code)}</td><td>${esc(c.customer_name||'')}</td><td>${esc(c.concept)}</td>
+      <td class="num">${money(c.amount)}</td>
+      <td><span class="pill ${PILL[c.status]||''}">${esc(c.status)}</span>${venc}</td><td>${acts}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" class="muted">Sin cobros</td></tr>';
+}
+async function createCharge(e){
+  e.preventDefault();
+  const methods = [];
+  if($('mTarjeta').checked) methods.push('tarjeta');
+  if($('mTransfer').checked) methods.push('transferencia');
+  if(!methods.length){ $('chMsg').innerHTML='<div class="msg e">Elija al menos un método</div>'; return false; }
+  const r = await post('/api/pago/cobros', {customer_id:$('chCustomer').value, concept:$('chConcept').value.trim(),
+    description:$('chDesc').value.trim(), amount:$('chAmount').value, due_date:$('chDue').value||null,
+    allowed_methods:methods});
+  if(r.ok){
+    const url = r.d.charge.link_url;
+    try{ await navigator.clipboard.writeText(url); }catch(_){}
+    $('chMsg').innerHTML = `<div class="msg s">Cobro ${esc(r.d.charge.code)} creado. Enlace copiado:<br><b>${esc(url)}</b></div>`;
+    ['chConcept','chDesc','chAmount','chDue'].forEach(i=>$(i).value='');
+    loadCharges();
+  } else $('chMsg').innerHTML = `<div class="msg e">${esc(r.d.error||'Error')}</div>`;
+  return false;
+}
+async function copyLink(id){
+  const c = CHARGES.find(x=>x.id===id); if(!c) return;
+  try{ await navigator.clipboard.writeText(c.link_url); alert('Enlace copiado:\n'+c.link_url); }
+  catch(_){ prompt('Copie el enlace:', c.link_url); }
+}
+async function relink(id){
+  if(!confirm('¿Regenerar el enlace? El anterior dejará de funcionar.')) return;
+  const r = await post(`/api/pago/cobros/${id}/link`);
+  if(r.ok){ try{ await navigator.clipboard.writeText(r.d.link_url); }catch(_){}
+    alert('Nuevo enlace (copiado):\n'+r.d.link_url); loadCharges(); }
+  else alert(r.d.error||'Error');
+}
+async function manualPay(id){
+  const method = prompt('Método del pago recibido: escriba "efectivo" o "cheque"');
+  if(!method) return;
+  if(!['efectivo','cheque'].includes(method.trim().toLowerCase())) return alert('Método inválido');
+  const note = prompt('Nota (nº de cheque, observación…) — opcional') || '';
+  const r = await post('/api/pago/pagos', {charge_id:id, method:method.trim().toLowerCase(), note});
+  if(r.ok){ alert('Pago registrado. Recibo: '+r.d.receipt_number); loadCharges(); }
+  else alert(r.d.error||'Error');
+}
+async function voidCharge(id){
+  const reason = prompt('Motivo de anulación:');
+  if(!reason) return;
+  const r = await post(`/api/pago/cobros/${id}/anular`, {reason});
+  if(r.ok) loadCharges(); else alert(r.d.error||'Error');
+}
+whoami().then(u => { if(u){ loadCustomers(); loadCharges(); } });
+</script>
+{% endblock %}

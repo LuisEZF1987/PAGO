@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Dimed Pago — Pagos{% endblock %}
+{% block content %}
+<div class="pagehead"><h2>Pagos</h2>
+  <button class="sec" onclick="exportXlsx()">Exportar Excel</button></div>
+<div class="card">
+  <div class="row">
+    <select id="fStatus" onchange="loadPayments()">
+      <option value="">Todos los estados</option><option value="aprobado">Aprobado</option>
+      <option value="en_revision">En revisión</option><option value="rechazado">Rechazado</option>
+      <option value="iniciado">Iniciado</option><option value="reembolsado">Reembolsado</option>
+      <option value="anulado">Anulado</option>
+    </select>
+    <select id="fMethod" onchange="loadPayments()">
+      <option value="">Todos los métodos</option><option value="tarjeta">Tarjeta</option>
+      <option value="transferencia">Transferencia</option><option value="efectivo">Efectivo</option>
+      <option value="cheque">Cheque</option>
+    </select>
+    <input id="fDesde" type="date" onchange="loadPayments()">
+    <input id="fHasta" type="date" onchange="loadPayments()">
+    <input id="fQ" placeholder="Cobro, cliente o recibo…" oninput="debounceLoad()">
+  </div>
+  <table style="margin-top:.7rem">
+    <thead><tr><th>Fecha</th><th>Recibo</th><th>Cobro</th><th>Cliente</th><th>Método</th>
+    <th>Estado</th><th class="num">Monto</th><th>Acciones</th></tr></thead>
+    <tbody id="tb"></tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const PILL = {aprobado:'s', rechazado:'e', anulado:'e', reembolsado:'w', en_revision:'w', iniciado:''};
+let deb = null;
+function debounceLoad(){ clearTimeout(deb); deb = setTimeout(loadPayments, 300); }
+function filters(){
+  return `status=${$('fStatus').value}&method=${$('fMethod').value}&desde=${$('fDesde').value}`+
+         `&hasta=${$('fHasta').value}&q=${encodeURIComponent($('fQ').value||'')}`;
+}
+async function loadPayments(){
+  const r = await api('/api/pago/pagos?' + filters());
+  if(!r.ok) return;
+  const admin = CURRENT_USER && CURRENT_USER.role !== 'cobrador';
+  $('tb').innerHTML = (r.d.payments||[]).map(p => {
+    let acts = '';
+    if(p.status==='aprobado' || p.status==='reembolsado')
+      acts += `<button class="mini sec" onclick="window.open('/api/pago/pagos/${p.id}/recibo.pdf')">Recibo</button>`;
+    if(admin && p.status==='aprobado')
+      acts += ` <button class="mini lnk" onclick="refund('${p.id}','${p.method}')">Reembolsar</button>`;
+    if(admin && p.status==='aprobado' && (p.method==='efectivo'||p.method==='cheque'))
+      acts += ` <button class="mini lnk" onclick="voidPay('${p.id}')">Anular</button>`;
+    const detail = p.method==='tarjeta' && p.card_last4 ? ` **** ${esc(p.card_last4)}` : '';
+    return `<tr><td>${esc((p.created_at||'').slice(0,16).replace('T',' '))}</td>
+      <td>${esc(p.receipt_number||'—')}</td><td>${esc(p.charge_code)}</td><td>${esc(p.customer_name)}</td>
+      <td>${esc(p.method)}${detail}</td>
+      <td><span class="pill ${PILL[p.status]||''}">${esc(p.status)}</span>${p.error_message?` <span class="muted" title="${esc(p.error_message)}">ⓘ</span>`:''}</td>
+      <td class="num">${money(p.amount)}</td><td>${acts}</td></tr>`;
+  }).join('') || '<tr><td colspan="8" class="muted">Sin pagos</td></tr>';
+}
+async function refund(id, method){
+  let note = '';
+  if(method !== 'tarjeta'){
+    note = prompt('Reembolso manual (no tarjeta): indique cómo se devolvió el dinero:') || '';
+    if(!note) return;
+  } else if(!confirm('¿Reembolsar este pago con tarjeta a través de la pasarela?')) return;
+  const r = await post(`/api/pago/pagos/${id}/reembolsar`, {note});
+  if(r.ok) loadPayments(); else alert(r.d.error||'Error');
+}
+async function voidPay(id){
+  const note = prompt('Motivo de anulación (error de digitación…):');
+  if(!note) return;
+  const r = await post(`/api/pago/pagos/${id}/anular`, {note});
+  if(r.ok) loadPayments(); else alert(r.d.error||'Error');
+}
+function exportXlsx(){ window.open('/api/pago/pagos/export.xlsx?' + filters()); }
+whoami().then(u => { if(u) loadPayments(); });
+</script>
+{% endblock %}

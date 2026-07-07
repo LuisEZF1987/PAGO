@@ -1,0 +1,12 @@
+pytest>=8
+pytest-cov
+flask>=3
+PyJWT>=2
+bcrypt>=4
+psycopg2-binary>=2.9
+pyotp>=2.9
+cryptography>=42.0
+qrcode>=8.0
+pypng>=0.20220715.0
+reportlab>=4
+openpyxl>=3

@@ -1,0 +1,28 @@
+# Hooks locales antes de cada commit. Instalar una vez con:  pre-commit install
+# Correr sobre todo el repo:  pre-commit run --all-files
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff            # lint (config en ruff.toml)
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks       # impide commitear secretos
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+      - id: check-merge-conflict
+
+  - repo: local
+    hooks:
+      - id: bloquear-certificados
+        name: Bloquear certificados/llaves (*.p12 *.pfx *.pem *.key *.crt *.cer)
+        entry: "No commitees certificados ni llaves privadas. Quitalos del commit (van en .gitignore)."
+        language: fail
+        files: '\.(p12|pfx|pem|key|crt|cer)$'

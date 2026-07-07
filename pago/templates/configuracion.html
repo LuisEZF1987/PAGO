@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Dimed Pago — Configuración{% endblock %}
+{% block content %}
+<div class="pagehead"><h2>Configuración</h2></div>
+<div class="grid2">
+  <div class="card">
+    <h3>Datos de la empresa (salen en el recibo y el enlace de pago)</h3>
+    <form onsubmit="return saveConfig(event)">
+      <label>Nombre / Razón social</label><input id="kName">
+      <div class="row">
+        <div><label>RUC</label><input id="kRuc"></div>
+        <div><label>Teléfono</label><input id="kPhone"></div>
+      </div>
+      <label>Dirección</label><input id="kAddress">
+      <div class="row">
+        <div><label>Email</label><input id="kEmail" type="email"></div>
+        <div><label>Vigencia de enlaces (días)</label><input id="kDays" type="number" min="1"></div>
+      </div>
+      <div style="margin-top:.9rem"><button type="submit">Guardar</button></div>
+      <div id="kMsg"></div>
+    </form>
+  </div>
+  <div class="card">
+    <h3>Nueva cuenta bancaria (para transferencias)</h3>
+    <form onsubmit="return createBank(event)">
+      <div class="row">
+        <div><label>Banco *</label><input id="bBank" required></div>
+        <div><label>Tipo</label><select id="bType"><option value="corriente">Corriente</option><option value="ahorros">Ahorros</option></select></div>
+      </div>
+      <div class="row">
+        <div><label>Nº de cuenta *</label><input id="bNumber" required></div>
+        <div><label>Titular *</label><input id="bHolder" required></div>
+      </div>
+      <div class="row">
+        <div><label>RUC/CI del titular</label><input id="bDoc"></div>
+        <div><label>SWIFT/BIC (exterior)</label><input id="bSwift"></div>
+      </div>
+      <label>Instrucciones extra</label><input id="bExtra" placeholder="Ej.: enviar comprobante al WhatsApp 09xxxxxxxx">
+      <div style="margin-top:.9rem"><button type="submit">Agregar cuenta</button></div>
+      <div id="bMsg"></div>
+    </form>
+  </div>
+</div>
+<div class="card">
+  <h3>Cuentas bancarias</h3>
+  <table><thead><tr><th>Banco</th><th>Cuenta</th><th>Titular</th><th>SWIFT</th><th>Activa</th><th></th></tr></thead>
+  <tbody id="tbBanks"></tbody></table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadConfig(){
+  const r = await api('/api/pago/config');
+  if(!r.ok) return;
+  const c = r.d.config || {};
+  $('kName').value=c.company_name||''; $('kRuc').value=c.company_ruc||'';
+  $('kPhone').value=c.company_phone||''; $('kAddress').value=c.company_address||'';
+  $('kEmail').value=c.company_email||''; $('kDays').value=c.link_default_days||'90';
+}
+async function saveConfig(e){
+  e.preventDefault();
+  const r = await put('/api/pago/config', {company_name:$('kName').value, company_ruc:$('kRuc').value,
+    company_phone:$('kPhone').value, company_address:$('kAddress').value,
+    company_email:$('kEmail').value, link_default_days:$('kDays').value});
+  $('kMsg').innerHTML = r.ok ? '<div class="msg s">Guardado</div>' : `<div class="msg e">${esc(r.d.error||'Error')}</div>`;
+  return false;
+}
+async function loadBanks(){
+  const r = await api('/api/pago/cuentas-bancarias');
+  if(!r.ok) return;
+  $('tbBanks').innerHTML = (r.d.accounts||[]).map(b =>
+    `<tr ${b.is_active?'':'style="opacity:.5"'}><td>${esc(b.bank_name)}</td>
+     <td>${esc(b.account_type)} ${esc(b.account_number)}</td><td>${esc(b.holder_name)}</td>
+     <td class="muted">${esc(b.swift_bic||'')}</td>
+     <td>${b.is_active?'<span class="pill s">sí</span>':'<span class="pill e">no</span>'}</td>
+     <td><button class="mini sec" onclick="toggleBank('${b.id}', ${!b.is_active})">${b.is_active?'Desactivar':'Activar'}</button></td></tr>`).join('')
+    || '<tr><td colspan="6" class="muted">Sin cuentas — agregue al menos una para aceptar transferencias</td></tr>';
+}
+async function createBank(e){
+  e.preventDefault();
+  const r = await post('/api/pago/cuentas-bancarias', {bank_name:$('bBank').value.trim(), account_type:$('bType').value,
+    account_number:$('bNumber').value.trim(), holder_name:$('bHolder').value.trim(),
+    holder_doc:$('bDoc').value.trim(), swift_bic:$('bSwift').value.trim(), extra_instructions:$('bExtra').value.trim()});
+  $('bMsg').innerHTML = r.ok ? '<div class="msg s">Cuenta agregada</div>' : `<div class="msg e">${esc(r.d.error||'Error')}</div>`;
+  if(r.ok){ ['bBank','bNumber','bHolder','bDoc','bSwift','bExtra'].forEach(i=>$(i).value=''); loadBanks(); }
+  return false;
+}
+whoami().then(u => { if(u){ loadConfig(); loadBanks(); } });
+</script>
+{% endblock %}

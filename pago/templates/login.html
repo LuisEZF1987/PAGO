@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dimed Pago — Ingreso</title>
+  <style>
+    :root, [data-theme="dark"] { --bg:#020617; --surface:rgba(15,23,42,0.6); --border:rgba(51,65,85,0.5);
+      --text:#e2e8f0; --muted:#94a3b8; --accent:#34d399; --accent2:#065f46; --input:#0f172a; --danger:#ef4444; }
+    [data-theme="light"] { --bg:#f1f5f9; --surface:#ffffff; --border:#e2e8f0; --text:#0f172a; --muted:#64748b;
+      --accent:#047857; --accent2:#047857; --input:#f8fafc; --danger:#c0392b; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg);
+           color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+    .card { background:var(--surface); border:1px solid var(--border); padding:2rem 2.2rem; border-radius:14px; width:350px; }
+    h1 { margin:0 0 .15rem; font-size:1.35rem; } h1 .ac { color:var(--accent); }
+    p.sub { margin:0 0 1.4rem; color:var(--muted); font-size:.82rem; }
+    label { display:block; font-size:.74rem; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); margin:.7rem 0 .25rem; }
+    input { width:100%; padding:.6rem .7rem; background:var(--input); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:.95rem; outline:none; }
+    input:focus { border-color:var(--accent); }
+    button { width:100%; margin-top:1.3rem; padding:.7rem; background:var(--accent2); color:#fff; border:0; border-radius:8px; font-size:1rem; cursor:pointer; }
+    .err { color:var(--danger); font-size:.82rem; margin-top:.8rem; min-height:1em; }
+    .th { position:absolute; top:1rem; right:1.2rem; color:var(--muted); font-size:.8rem; cursor:pointer; background:none; border:0; }
+  </style>
+</head>
+<body>
+  <button class="th" onclick="toggleTheme()" id="thBtn">◐ tema</button>
+  <form class="card" onsubmit="return doLogin(event)">
+    <h1>Dimed<span class="ac">·Pago</span></h1>
+    <p class="sub">Cobros con tarjeta, transferencia y efectivo</p>
+    <div id="paso1">
+      <label>Usuario</label>
+      <input id="u" autocomplete="username" autofocus>
+      <label>Contraseña</label>
+      <input id="p" type="password" autocomplete="current-password">
+    </div>
+    <div id="paso2" style="display:none">
+      <label>Código de verificación (app autenticadora o recuperación)</label>
+      <input id="c" inputmode="numeric" autocomplete="one-time-code" placeholder="123456">
+    </div>
+    <button type="submit" id="btn">Ingresar</button>
+    <div class="err" id="err"></div>
+  </form>
+  <script>
+    function applyTheme(t){ document.documentElement.setAttribute('data-theme', t); }
+    function toggleTheme(){ const c=document.documentElement.getAttribute('data-theme')||'dark'; const n=c==='dark'?'light':'dark'; localStorage.setItem('pago-theme',n); applyTheme(n); }
+    applyTheme(localStorage.getItem('pago-theme')||'dark');
+    let pending2fa=null;
+    async function doLogin(e){ e.preventDefault(); $err.textContent='';
+      if(pending2fa){
+        const r=await fetch('/api/auth/login/2fa',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({pending_token:pending2fa,code:document.getElementById('c').value})});
+        const d=await r.json();
+        if(r.ok) location.href=d.redirect||'/';
+        else { $err.textContent=d.error||'Error'; if(r.status===401&&/expirada/i.test(d.error||'')) volverPaso1(); }
+        return false;
+      }
+      const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({username:document.getElementById('u').value,password:document.getElementById('p').value})});
+      const d=await r.json();
+      if(r.ok && d.requires_2fa){ pending2fa=d.pending_token;
+        document.getElementById('paso1').style.display='none';
+        document.getElementById('paso2').style.display='block';
+        document.getElementById('btn').textContent='Verificar';
+        document.getElementById('c').focus(); }
+      else if(r.ok) location.href=d.redirect||'/';
+      else $err.textContent=d.error||'Error';
+      return false; }
+    function volverPaso1(){ pending2fa=null;
+      document.getElementById('paso1').style.display='block';
+      document.getElementById('paso2').style.display='none';
+      document.getElementById('btn').textContent='Ingresar'; }
+    const $err=document.getElementById('err');
+  </script>
+</body>
+</html>

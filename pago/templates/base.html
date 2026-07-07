@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Dimed Pago{% endblock %}</title>
+  <style>
+    /* ===== Tema (variables) — DARK por defecto, igual que la suite Dimed ===== */
+    :root, [data-theme="dark"] {
+      --bg:#020617; --surface:rgba(15,23,42,0.6); --surface-solid:#0f172a;
+      --border:rgba(51,65,85,0.5); --border-soft:rgba(51,65,85,0.3);
+      --text:#e2e8f0; --muted:#94a3b8; --faint:#475569;
+      --accent:#34d399; --accent2:#065f46; --accent-soft:rgba(52,211,153,0.1);
+      --sidebar-bg:rgba(15,23,42,0.85); --input-bg:#0f172a;
+      --success:#22c55e; --success-soft:rgba(34,197,94,0.12);
+      --warning:#f59e0b; --danger:#ef4444; --danger-soft:rgba(239,68,68,0.12);
+      --shadow:0 4px 14px rgba(0,0,0,0.35);
+    }
+    [data-theme="light"] {
+      --bg:#f1f5f9; --surface:#ffffff; --surface-solid:#ffffff;
+      --border:#e2e8f0; --border-soft:#eef2f7;
+      --text:#0f172a; --muted:#64748b; --faint:#94a3b8;
+      --accent:#047857; --accent2:#065f46; --accent-soft:rgba(4,120,87,0.08);
+      --sidebar-bg:#ffffff; --input-bg:#f8fafc;
+      --success:#1e8449; --success-soft:rgba(30,132,73,0.10);
+      --warning:#b9770e; --danger:#c0392b; --danger-soft:rgba(192,57,43,0.08);
+      --shadow:0 4px 14px rgba(15,23,42,0.08);
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; display:flex; background:var(--bg); color:var(--text);
+           font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; transition:background .2s,color .2s; }
+    a { color:inherit; text-decoration:none; }
+    .sidebar { width:224px; min-height:100vh; background:var(--sidebar-bg); border-right:1px solid var(--border);
+               display:flex; flex-direction:column; padding:1rem; position:sticky; top:0; }
+    .brand h1 { margin:0; font-size:1.15rem; font-weight:700; }
+    .brand h1 .ac { color:var(--accent); }
+    .brand p { margin:.1rem 0 0; color:var(--muted); font-size:.72rem; }
+    nav.side { margin-top:1.4rem; display:flex; flex-direction:column; gap:.15rem; flex:1; }
+    .nav-item { display:flex; align-items:center; gap:.6rem; padding:.55rem .75rem; border-radius:.5rem;
+                color:var(--muted); font-size:.88rem; cursor:pointer; transition:all .15s; }
+    .nav-item:hover, .nav-item.active { background:var(--accent-soft); color:var(--accent); }
+    .nav-item.active { font-weight:600; }
+    .nav-item svg { width:18px; height:18px; flex:0 0 auto; }
+    .side-foot { border-top:1px solid var(--border); padding-top:.7rem; margin-top:.7rem; }
+    .uinfo { font-size:.72rem; color:var(--muted); margin:.2rem .2rem .6rem; }
+    main { flex:1; padding:1.6rem 1.8rem; overflow:auto; }
+    .pagehead { display:flex; justify-content:space-between; align-items:center; margin-bottom:1.1rem; }
+    .pagehead h2 { margin:0; font-size:1.2rem; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+    .grid4 { display:grid; grid-template-columns:repeat(4,1fr); gap:1rem; }
+    @media (max-width:860px){ .grid2,.grid4{grid-template-columns:1fr;} .sidebar{width:64px;} .brand p,.nav-item span,.uinfo{display:none;} }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:.75rem; padding:1.1rem 1.2rem; box-shadow:var(--shadow); }
+    .card + .card { margin-top:1rem; }
+    .card h3 { margin:0 0 .8rem; font-size:.82rem; text-transform:uppercase; letter-spacing:.05em; color:var(--accent);
+               border-bottom:1px solid var(--border-soft); padding-bottom:.5rem; }
+    .full { grid-column:1 / -1; }
+    label { display:block; font-size:.72rem; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); margin:.5rem 0 .25rem; }
+    input, select, textarea { width:100%; padding:.5rem .65rem; background:var(--input-bg); border:1px solid var(--border);
+                    border-radius:.5rem; color:var(--text); font-size:.9rem; outline:none; transition:border .15s; }
+    input:focus, select:focus, textarea:focus { border-color:var(--accent); }
+    .row { display:flex; gap:.55rem; }
+    .row > * { flex:1; }
+    button { background:var(--accent2); color:#fff; border:0; border-radius:.5rem; padding:.55rem .85rem;
+             font-size:.88rem; font-weight:500; cursor:pointer; transition:filter .15s; }
+    button:hover { filter:brightness(1.12); }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    button.ok { background:var(--success); }
+    button.sec { background:transparent; border:1px solid var(--border); color:var(--text); }
+    button.lnk { background:none; color:var(--danger); padding:.2rem .4rem; font-size:.8rem; }
+    button.mini { padding:.25rem .55rem; font-size:.76rem; }
+    table { width:100%; border-collapse:collapse; font-size:.85rem; }
+    th { text-align:left; padding:.45rem .4rem; font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;
+         color:var(--muted); border-bottom:1px solid var(--border); }
+    td { padding:.5rem .4rem; border-bottom:1px solid var(--border-soft); }
+    td.num, th.num { text-align:right; }
+    .muted { color:var(--muted); font-size:.82rem; }
+    .total { font-size:1.3rem; font-weight:700; color:var(--accent); }
+    .pill { display:inline-block; background:var(--accent-soft); color:var(--accent); padding:.12rem .5rem; border-radius:20px; font-size:.72rem; }
+    .pill.s { background:var(--success-soft); color:var(--success); }
+    .pill.e { background:var(--danger-soft); color:var(--danger); }
+    .pill.w { background:rgba(245,158,11,.14); color:var(--warning); }
+    .msg { font-size:.84rem; padding:.5rem .7rem; border-radius:.5rem; margin-top:.6rem; }
+    .msg.e { background:var(--danger-soft); color:var(--danger); }
+    .msg.s { background:var(--success-soft); color:var(--success); }
+    .hidden { display:none; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <h1>Dimed<span class="ac">·Pago</span></h1>
+      <p>Cobros y pagos</p>
+    </div>
+    <nav class="side">
+      <a class="nav-item {% if page=='dashboard' %}active{% endif %}" href="/">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/></svg>
+        <span>Dashboard</span>
+      </a>
+      <a class="nav-item {% if page=='cobros' %}active{% endif %}" href="/cobros">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>
+        <span>Cobros</span>
+      </a>
+      <a class="nav-item {% if page=='clientes' %}active{% endif %}" href="/clientes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+        <span>Clientes</span>
+      </a>
+      <a class="nav-item {% if page=='pagos' %}active{% endif %}" href="/pagos">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/></svg>
+        <span>Pagos</span>
+      </a>
+      <a class="nav-item {% if page=='conciliacion' %}active{% endif %}" href="/conciliacion">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        <span>Conciliación</span>
+      </a>
+      <a id="navUsuarios" class="nav-item {% if page=='usuarios' %}active{% endif %}" href="/usuarios">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 016-6h4a6 6 0 016 6v1"/></svg>
+        <span>Usuarios</span>
+      </a>
+      <a id="navConfig" class="nav-item {% if page=='configuracion' %}active{% endif %}" href="/configuracion">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        <span>Configuración</span>
+      </a>
+    </nav>
+    <div class="side-foot">
+      <div class="nav-item" onclick="toggleTheme()" title="Cambiar tema">
+        <svg id="thIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        <span id="thLabel">Modo claro</span>
+      </div>
+      <div class="uinfo" id="uinfo"></div>
+      <div class="nav-item" style="color:var(--danger)" onclick="logout()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        <span>Salir</span>
+      </div>
+    </div>
+  </aside>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const money = n => '$' + (Number(n)||0).toFixed(2);
+    const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    async function api(path, opts){ const r = await fetch(path, opts); let d={}; try{d=await r.json()}catch(e){} return {ok:r.ok, status:r.status, d}; }
+    const post = (path, body) => api(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body||{})});
+    const put = (path, body) => api(path, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body||{})});
+    // ----- tema -----
+    function applyTheme(t){ document.documentElement.setAttribute('data-theme', t);
+      $('thLabel').textContent = t==='dark' ? 'Modo claro' : 'Modo oscuro'; }
+    function toggleTheme(){ const cur=document.documentElement.getAttribute('data-theme')||'dark';
+      const nxt = cur==='dark'?'light':'dark'; localStorage.setItem('pago-theme', nxt); applyTheme(nxt); }
+    applyTheme(localStorage.getItem('pago-theme') || 'dark');
+    // ----- sesion -----
+    let CURRENT_USER = null;
+    async function whoami(){ const me = await api('/api/auth/me'); if(!me.ok){ location.href='/login'; return null; }
+      CURRENT_USER = me.d.user;
+      $('uinfo').textContent = me.d.user.full_name + ' · ' + me.d.user.role;
+      if(me.d.user.role === 'cobrador'){ const u=$('navUsuarios'); if(u) u.style.display='none'; }
+      return me.d.user; }
+    async function logout(){ await api('/api/auth/logout',{method:'POST'}); location.href='/login'; }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

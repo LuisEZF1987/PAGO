@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Dimed Pago — Clientes{% endblock %}
+{% block content %}
+<div class="pagehead"><h2>Clientes</h2></div>
+<div class="grid2">
+  <div class="card">
+    <h3 id="formTitle">Nuevo cliente</h3>
+    <form onsubmit="return saveCustomer(event)">
+      <input type="hidden" id="cId">
+      <label>Nombre / Razón social *</label><input id="cName" required>
+      <div class="row">
+        <div><label>Tipo doc.</label>
+          <select id="cDocType"><option value="cedula">Cédula</option><option value="ruc">RUC</option>
+          <option value="pasaporte">Pasaporte</option><option value="id_extranjera">ID extranjera</option></select></div>
+        <div><label>Documento</label><input id="cDoc"></div>
+      </div>
+      <div class="row">
+        <div><label>Email</label><input id="cEmail" type="email"></div>
+        <div><label>Teléfono</label><input id="cPhone"></div>
+      </div>
+      <div class="row">
+        <div><label>País (ISO-2)</label><input id="cCountry" value="EC" maxlength="2"></div>
+        <div><label>Dirección</label><input id="cAddress"></div>
+      </div>
+      <label>Notas</label><input id="cNotes">
+      <div class="row" style="margin-top:.9rem">
+        <button type="submit" id="btnSave">Guardar</button>
+        <button type="button" class="sec" onclick="resetForm()">Limpiar</button>
+      </div>
+      <div id="cMsg"></div>
+    </form>
+  </div>
+  <div class="card">
+    <h3>Listado</h3>
+    <input id="q" placeholder="Buscar por nombre, documento o email…" oninput="debounceLoad()">
+    <table style="margin-top:.7rem"><thead><tr><th>Nombre</th><th>Documento</th><th>Contacto</th><th></th></tr></thead>
+    <tbody id="tb"></tbody></table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let CUSTOMERS = [], deb = null;
+function debounceLoad(){ clearTimeout(deb); deb = setTimeout(loadList, 300); }
+async function loadList(){
+  const r = await api('/api/pago/clientes?q=' + encodeURIComponent($('q').value||''));
+  if(!r.ok) return;
+  CUSTOMERS = r.d.customers || [];
+  $('tb').innerHTML = CUSTOMERS.map(c =>
+    `<tr ${c.is_active?'':'style="opacity:.5"'}><td>${esc(c.name)}</td>
+     <td class="muted">${esc(c.doc_type)} ${esc(c.doc_number||'')}</td>
+     <td class="muted">${esc(c.email||'')} ${esc(c.phone||'')}</td>
+     <td><button class="mini sec" onclick="editCustomer('${c.id}')">Editar</button></td></tr>`).join('')
+    || '<tr><td colspan="4" class="muted">Sin clientes</td></tr>';
+}
+function editCustomer(id){
+  const c = CUSTOMERS.find(x => x.id === id); if(!c) return;
+  $('formTitle').textContent = 'Editar cliente';
+  $('cId').value=c.id; $('cName').value=c.name; $('cDocType').value=c.doc_type; $('cDoc').value=c.doc_number||'';
+  $('cEmail').value=c.email||''; $('cPhone').value=c.phone||''; $('cCountry').value=c.country||'EC';
+  $('cAddress').value=c.address||''; $('cNotes').value=c.notes||'';
+}
+function resetForm(){
+  $('formTitle').textContent='Nuevo cliente'; $('cId').value='';
+  ['cName','cDoc','cEmail','cPhone','cAddress','cNotes'].forEach(i=>$(i).value='');
+  $('cDocType').value='cedula'; $('cCountry').value='EC'; $('cMsg').innerHTML='';
+}
+async function saveCustomer(e){
+  e.preventDefault();
+  const body = {name:$('cName').value.trim(), doc_type:$('cDocType').value, doc_number:$('cDoc').value.trim(),
+                email:$('cEmail').value.trim(), phone:$('cPhone').value.trim(), country:$('cCountry').value.trim(),
+                address:$('cAddress').value.trim(), notes:$('cNotes').value.trim()};
+  const id = $('cId').value;
+  const r = id ? await put('/api/pago/clientes/'+id, body) : await post('/api/pago/clientes', body);
+  $('cMsg').innerHTML = r.ok ? '<div class="msg s">Guardado</div>' : `<div class="msg e">${esc(r.d.error||'Error')}</div>`;
+  if(r.ok){ resetForm(); loadList(); }
+  return false;
+}
+whoami().then(u => { if(u) loadList(); });
+</script>
+{% endblock %}

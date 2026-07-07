@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Dimed Pago — Conciliación{% endblock %}
+{% block content %}
+<div class="pagehead"><h2>Conciliación de transferencias</h2></div>
+<div class="card">
+  <h3>Pendientes de revisión</h3>
+  <p class="muted">Verifique en su banco que la transferencia llegó antes de aprobar. Solo administradores aprueban/rechazan.</p>
+  <table>
+    <thead><tr><th>Fecha</th><th>Cobro</th><th>Cliente</th><th>Referencia</th><th>Banco</th>
+    <th class="num">Monto</th><th>Comprobante</th><th>Acciones</th></tr></thead>
+    <tbody id="tb"></tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadPending(){
+  const r = await api('/api/pago/conciliacion');
+  if(!r.ok) return;
+  const admin = CURRENT_USER && CURRENT_USER.role !== 'cobrador';
+  $('tb').innerHTML = (r.d.pending||[]).map(p => {
+    const file = p.receipt_file_id
+      ? `<button class="mini sec" onclick="window.open('/api/pago/comprobantes/${p.receipt_file_id}')">Ver</button>`
+      : '<span class="muted">—</span>';
+    const acts = admin
+      ? `<button class="mini ok" onclick="approve('${p.id}')">Aprobar</button>
+         <button class="mini lnk" onclick="reject('${p.id}')">Rechazar</button>`
+      : '<span class="muted">solo admin</span>';
+    return `<tr><td>${esc((p.created_at||'').slice(0,16).replace('T',' '))}</td>
+      <td>${esc(p.charge_code)}<div class="muted">${esc(p.concept)}</div></td>
+      <td>${esc(p.customer_name)}<div class="muted">${esc(p.payer_name||'')}</div></td>
+      <td>${esc(p.reference||'')}</td><td>${esc(p.bank_name||'')}</td>
+      <td class="num">${money(p.amount)}</td><td>${file}</td><td>${acts}</td></tr>`;
+  }).join('') || '<tr><td colspan="8" class="muted">No hay transferencias por conciliar 🎉</td></tr>';
+}
+async function approve(id){
+  if(!confirm('¿Confirmó en el banco que el dinero llegó? El cobro pasará a PAGADO.')) return;
+  const r = await post(`/api/pago/pagos/${id}/aprobar`);
+  if(r.ok){ alert('Aprobado. Recibo: '+r.d.receipt_number); loadPending(); }
+  else alert(r.d.error||'Error');
+}
+async function reject(id){
+  const motivo = prompt('Motivo del rechazo (se registra en auditoría):');
+  if(!motivo) return;
+  const r = await post(`/api/pago/pagos/${id}/rechazar`, {motivo});
+  if(r.ok) loadPending(); else alert(r.d.error||'Error');
+}
+whoami().then(u => { if(u) loadPending(); });
+</script>
+{% endblock %}

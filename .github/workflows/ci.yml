@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+
+  security:
+    name: SAST + dependencias
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install bandit pip-audit
+      - name: Bandit (SAST)
+        # B104 = bind 0.0.0.0: aceptable en contenedor tras proxy.
+        # B608 = SQL por concatenacion: solo se concatenan nombres de columna
+        #        desde listas fijas del codigo; los valores van parametrizados
+        #        con %s (no inyectable).
+        run: bandit -r pago -ll --skip B104,B608
+      - name: pip-audit (CVEs en dependencias declaradas)
+        run: pip-audit -r pago/requirements.txt
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
+            | tar -xz -C /tmp gitleaks
+          /tmp/gitleaks detect --source . --no-banner --redact
+
+  test:
+    name: Tests (pytest + Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: dimed_pago
+          POSTGRES_USER: dimed
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dimed -d dimed_pago"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_NAME: dimed_pago
+      PG_USER: dimed
+      PG_PASSWORD: postgres
+      JWT_SECRET: ci-secret-not-for-production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - name: Aplicar migraciones
+        run: |
+          python - <<'PY'
+          import glob, psycopg2
+          conn = psycopg2.connect(host="localhost", port=5432, dbname="dimed_pago",
+                                  user="dimed", password="postgres")
+          conn.autocommit = True
+          cur = conn.cursor()
+          for f in sorted(glob.glob("migrations/*.sql")):
+              print("aplicando", f)
+              cur.execute(open(f, encoding="utf-8").read())
+          PY
+      - name: pytest
+        run: pytest -q
