@@ -1915,6 +1915,35 @@ def public_paypal_capture(token):
 
         if res.ok:
             capture_id = res.extra.get("capture_id") or ""
+            # Validar que PayPal capturó EXACTAMENTE el monto y la moneda del cobro.
+            # Sin esto, un order_id que la pasarela reporta COMPLETED se aceptaría a
+            # ciegas aunque se haya capturado por otro valor (hueco de dinero).
+            cap_amount = res.extra.get("captured_amount")
+            cap_currency = (res.extra.get("captured_currency") or "").upper()
+            try:
+                amount_ok = cap_amount is not None and \
+                    Decimal(str(cap_amount)) == Decimal(str(charge["amount"]))
+            except (InvalidOperation, TypeError):
+                amount_ok = False
+            currency_ok = (not cap_currency) or cap_currency == str(charge["currency"]).upper()
+            if not (amount_ok and currency_ok):
+                try:
+                    gw.refund(capture_id or order_id)
+                    note = (f"monto capturado {cap_amount} {cap_currency} != cobro "
+                            f"{charge['amount']} {charge['currency']}; reembolsado")
+                except GatewayError:
+                    note = (f"MONTO NO COINCIDE Y SIN REEMBOLSAR: {cap_amount} {cap_currency} "
+                            f"vs {charge['amount']} {charge['currency']} — reembolsar a mano")
+                    log.error("PayPal: %s (capture %s)", note, capture_id)
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE pago_payments SET status='rechazado', error_message=%s, "
+                                "gateway_capture_ref=%s, updated_at=NOW() WHERE id=%s",
+                                (note, capture_id, payment["id"]))
+                conn.commit()
+                log_audit(None, "PAYPAL_AMOUNT_MISMATCH", "Payment", payment["id"],
+                          {"charge": charge["code"], "note": note}, ip)
+                return jsonify({"error": "El pago no coincide con el cobro; se anuló. "
+                                         "Contacte al comercio."}), 409
             try:
                 with conn.cursor() as cur:
                     receipt = _next_receipt(cur)
