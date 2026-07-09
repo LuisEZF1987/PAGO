@@ -140,7 +140,10 @@ class PayPalGateway:
             card_brand=(card.get("brand") or "paypal").lower(),
             card_last4=card.get("last_digits", ""),
             extra={"capture_id": cap.get("id", ""),
-                   "payer_email": payer.get("email_address", "")},
+                   "payer_email": payer.get("email_address", ""),
+                   # Monto/moneda REALMENTE capturados — el endpoint los valida contra el cobro.
+                   "captured_amount": (cap.get("amount") or {}).get("value"),
+                   "captured_currency": (cap.get("amount") or {}).get("currency_code")},
         )
 
     def confirm(self, gateway_ref):

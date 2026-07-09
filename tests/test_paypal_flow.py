@@ -17,8 +17,10 @@ class FakeOrdersGateway:
     def __init__(self):
         self.capture_result = "ok"
         self.refunded = []
+        self._orders = {}  # order_id -> (amount, currency), para simular la captura real
 
     def create_order(self, *, amount, currency, description, reference):
+        self._orders["FAKE-ORD-1"] = (Decimal(str(amount)), currency)
         return GatewayResult(ok=True, status="iniciado", gateway_ref="FAKE-ORD-1",
                              raw_status="CREATED")
 
@@ -27,9 +29,13 @@ class FakeOrdersGateway:
             return GatewayResult(ok=False, status="rechazado", gateway_ref=order_id,
                                  raw_status="INSTRUMENT_DECLINED",
                                  message="medio rechazado", extra={"retry": True})
+        amt, cur_ = self._orders.get(order_id, (Decimal("0"), "USD"))
+        if self.capture_result == "wrong_amount":
+            amt = amt + Decimal("1.00")   # simula que PayPal capturó por otro valor
         return GatewayResult(ok=True, status="aprobado", gateway_ref=order_id,
                              raw_status="COMPLETED", card_brand="visa", card_last4="1111",
-                             extra={"capture_id": "FAKE-CAP-1", "payer_email": "p@x.com"})
+                             extra={"capture_id": "FAKE-CAP-1", "payer_email": "p@x.com",
+                                    "captured_amount": f"{amt:.2f}", "captured_currency": cur_})
 
     def refund(self, ref, amount=None):
         self.refunded.append(ref)
@@ -72,6 +78,18 @@ class TestPayPalFlow:
         assert _charge_status(db_conn, s["charge_id"]) == "pagado"
         status, _ref, cap, receipt = _payment(db_conn, s["charge_id"])
         assert status == "aprobado" and cap == "FAKE-CAP-1" and receipt
+
+    def test_captura_monto_distinto_se_rechaza_y_reembolsa(self, client, seed, db_conn, fake_gw):
+        # Seguridad (R3): si PayPal captura por un monto != al del cobro, se anula y reembolsa.
+        s = seed["make_charge"]()
+        oid = client.post(f"/api/public/pay/{s['token']}/paypal/order", json={}).get_json()["order_id"]
+        fake_gw.capture_result = "wrong_amount"
+        r = client.post(f"/api/public/pay/{s['token']}/paypal/capture", json={"order_id": oid})
+        assert r.status_code == 409
+        assert _charge_status(db_conn, s["charge_id"]) != "pagado"
+        status, *_ = _payment(db_conn, s["charge_id"])
+        assert status == "rechazado"
+        assert fake_gw.refunded   # se pidió el reembolso automático
 
     def test_captura_repetida_no_reprocesa(self, client, seed, fake_gw):
         s = seed["make_charge"]()
