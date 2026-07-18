@@ -5,10 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dimed Pago — Ingreso</title>
   <style>
-    :root, [data-theme="dark"] { --bg:#020617; --surface:rgba(15,23,42,0.6); --border:rgba(51,65,85,0.5);
+    :root, [data-theme="dark"] { color-scheme:dark; --bg:#020617; --surface:rgba(15,23,42,0.6); --border:rgba(51,65,85,0.5);
       --text:#e2e8f0; --muted:#94a3b8; --accent:#34d399; --accent2:#065f46; --input:#0f172a; --danger:#ef4444; }
-    [data-theme="light"] { --bg:#f1f5f9; --surface:#ffffff; --border:#e2e8f0; --text:#0f172a; --muted:#64748b;
+    [data-theme="light"] { color-scheme:light; --bg:#f1f5f9; --surface:#ffffff; --border:#e2e8f0; --text:#0f172a; --muted:#64748b;
       --accent:#047857; --accent2:#047857; --input:#f8fafc; --danger:#c0392b; }
+    select option { background:#0f172a; color:#e2e8f0; }
+    [data-theme="light"] select option { background:#ffffff; color:#0f172a; }
     * { box-sizing:border-box; }
     body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg);
            color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }

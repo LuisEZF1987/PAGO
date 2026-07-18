@@ -7,6 +7,7 @@
   <style>
     /* ===== Tema (variables) — DARK por defecto, igual que la suite Dimed ===== */
     :root, [data-theme="dark"] {
+      color-scheme:dark;
       --bg:#020617; --surface:rgba(15,23,42,0.6); --surface-solid:#0f172a;
       --border:rgba(51,65,85,0.5); --border-soft:rgba(51,65,85,0.3);
       --text:#e2e8f0; --muted:#94a3b8; --faint:#475569;
@@ -17,6 +18,7 @@
       --shadow:0 4px 14px rgba(0,0,0,0.35);
     }
     [data-theme="light"] {
+      color-scheme:light;
       --bg:#f1f5f9; --surface:#ffffff; --surface-solid:#ffffff;
       --border:#e2e8f0; --border-soft:#eef2f7;
       --text:#0f172a; --muted:#64748b; --faint:#94a3b8;
@@ -61,6 +63,9 @@
     input, select, textarea { width:100%; padding:.5rem .65rem; background:var(--input-bg); border:1px solid var(--border);
                     border-radius:.5rem; color:var(--text); font-size:.9rem; outline:none; transition:border .15s; }
     input:focus, select:focus, textarea:focus { border-color:var(--accent); }
+    /* Fix desplegables: fondo del <option> legible en ambos temas */
+    select option { background:var(--surface-solid); color:var(--text); }
+    [data-theme="light"] select option { background:#ffffff; color:#0f172a; }
     .row { display:flex; gap:.55rem; }
     .row > * { flex:1; }
     button { background:var(--accent2); color:#fff; border:0; border-radius:.5rem; padding:.55rem .85rem;
