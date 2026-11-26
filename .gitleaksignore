@@ -1,0 +1,2 @@
+# Falso positivo: clave de PRUEBA en un test (no es un secreto real)
+804068798d4844db9ffec5e05ee6ee42e03751dc:tests/test_2fa_device.py:generic-api-key:15
